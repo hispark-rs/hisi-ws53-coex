@@ -455,3 +455,48 @@ fn polling_endpoint_checks_authority_backpressure_and_preserves_short_receive() 
         Err(ReceiveError::Invalidated)
     );
 }
+
+#[test]
+fn invalidated_session_can_reclaim_both_quiescent_queues_with_staged_message() {
+    use crate::endpoint::{Endpoint, ReceiveError};
+    use crate::protocol::FirmwareProtocol;
+    use crate::session::Session;
+    use crate::transport::ws53::{FrameAuthority, PollingEndpoint};
+
+    struct RejectAll;
+    // SAFETY: the policy never authorizes publication to the synthetic peer.
+    unsafe impl FrameAuthority for RejectAll {
+        fn permits(&self, _: Message<'_>) -> bool {
+            false
+        }
+    }
+    let tx_memory = prepared(8, true);
+    let rx_memory = prepared(8, false);
+    let tx_drops = tx_memory.drops.clone();
+    let rx_drops = rx_memory.drops.clone();
+    let peer_rx = rx_memory.bytes.clone();
+    let tx = unsafe { Transmit::from_prepared(tx_memory, Channel::Channel1) }.unwrap();
+    let rx = unsafe { Receive::from_prepared(rx_memory, Channel::Channel1) }.unwrap();
+    let endpoint =
+        unsafe { PollingEndpoint::from_prepared(tx, rx, RejectAll, FirmwareProtocol::Sdk163d9150) };
+    let mut session = Session::new(endpoint);
+    assert!(sdk_push(&peer_rx, 8, &[1, 0, 2, 0, 0xaa, 0xbb]));
+    assert_eq!(
+        session.try_receive(&mut [0; 1]),
+        Err(ReceiveError::BufferTooSmall { required: 6 })
+    );
+    session.invalidate();
+    assert_eq!(
+        session.try_receive(&mut [0; 8]),
+        Err(ReceiveError::Invalidated)
+    );
+    // SAFETY: no peer thread exists, no shared payload references remain, and
+    // this test explicitly accepts discarding the endpoint's staged message.
+    let (tx_memory, rx_memory, _) = unsafe { session.reclaim_after_peer_quiescent() };
+    assert_eq!(tx_drops.load(AtomicOrdering::SeqCst), 0);
+    assert_eq!(rx_drops.load(AtomicOrdering::SeqCst), 0);
+    drop(tx_memory);
+    drop(rx_memory);
+    assert_eq!(tx_drops.load(AtomicOrdering::SeqCst), 1);
+    assert_eq!(rx_drops.load(AtomicOrdering::SeqCst), 1);
+}

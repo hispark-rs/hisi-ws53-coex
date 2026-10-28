@@ -25,6 +25,12 @@ impl<E> Session<E> {
     pub fn is_valid(&self) -> bool {
         self.valid
     }
+
+    // Only for a transport-specific, quiescent reclaim path. Returning an
+    // endpoint to public callers could bypass this session's invalidation.
+    pub(crate) fn into_reclaim_endpoint(self) -> E {
+        self.endpoint
+    }
 }
 impl<E: Endpoint> Endpoint for Session<E> {
     fn try_send(&mut self, message: &[u8]) -> Result<(), SendError> {

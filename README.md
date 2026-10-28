@@ -20,7 +20,12 @@ After a short receive buffer the frame is retained locally even though the queue
 slot has been released. Explicit session invalidation prevents later endpoint
 operations; detected queue corruption also latches invalidation. A malformed
 complete message is retained and reported separately. Neither path resets a
-queue, detects an unobservable peer reset or reclaims peer memory.
+queue, detects an unobservable peer reset or automatically reclaims peer
+memory. Once the platform proves that both peers and all users are quiescent,
+the endpoint or its session can explicitly reclaim both backends through
+`reclaim_after_peer_quiescent`; its safety contract also requires reconciliation
+of caches and acceptance that a locally staged receive will be discarded.
+Invalidation alone does not establish quiescence.
 
 Run independent host tests with `cargo test --locked --target
 x86_64-unknown-linux-gnu --features defmt`; the RISC-V check uses the project's
