@@ -500,3 +500,41 @@ fn invalidated_session_can_reclaim_both_quiescent_queues_with_staged_message() {
     assert_eq!(tx_drops.load(AtomicOrdering::SeqCst), 1);
     assert_eq!(rx_drops.load(AtomicOrdering::SeqCst), 1);
 }
+
+#[test]
+fn notified_publication_preserves_published_frame_when_doorbell_is_pending() {
+    use crate::protocol::FirmwareProtocol;
+    use crate::transport::notification::{Published, try_send_and_notify};
+    use crate::transport::ws53::{FrameAuthority, PollingEndpoint};
+    struct TestPolicy;
+    // SAFETY: this peer only copies the inline test frame, with no pointers or
+    // service side effects; it has no external resource or lifetime needs.
+    unsafe impl FrameAuthority for TestPolicy {
+        fn permits(&self, _: Message<'_>) -> bool {
+            true
+        }
+    }
+    let tx_memory = prepared(16, true);
+    let rx_memory = prepared(16, false);
+    let peer_tx = tx_memory.bytes.clone();
+    let tx = unsafe { Transmit::from_prepared(tx_memory, Channel::Channel1) }.unwrap();
+    let rx = unsafe { Receive::from_prepared(rx_memory, Channel::Channel1) }.unwrap();
+    let mut endpoint = unsafe {
+        PollingEndpoint::from_prepared(tx, rx, TestPolicy, FirmwareProtocol::Sdk163d9150)
+    };
+    let frame = [1, 0, 2, 0, 0xaa, 0xbb];
+    let result = try_send_and_notify(&mut endpoint, &frame, || {
+        assert_eq!(read16(&peer_tx, 6), frame.len() as u16);
+        Err("doorbell pending")
+    });
+    assert_eq!(
+        result,
+        Ok(Published::NotificationFailed("doorbell pending"))
+    );
+    assert_eq!(sdk_pop(&peer_tx, 16).unwrap(), frame);
+    assert!(sdk_pop(&peer_tx, 16).is_none());
+    // SAFETY: synthetic peer is stopped and all host references/observations
+    // are complete; no staged message or external payload remains.
+    let (tx, rx, _) = unsafe { endpoint.reclaim_after_peer_quiescent() };
+    drop((tx, rx));
+}

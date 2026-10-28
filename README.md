@@ -27,6 +27,13 @@ the endpoint or its session can explicitly reclaim both backends through
 of caches and acceptance that a locally staged receive will be discarded.
 Invalidation alone does not establish quiescence.
 
+`transport::notification::try_send_and_notify` publishes first and then invokes
+one platform-supplied doorbell operation. A notification failure is returned as
+`Published::NotificationFailed`, so the already-published message is not retried
+by mistake. The platform must still qualify the peer's ACK/drain/recheck and
+cache ordering; a pending or successful doorbell is not proof of delivery.
+This helper does not implement interrupt handling or asynchronous wakeup.
+
 Run independent host tests with `cargo test --locked --target
 x86_64-unknown-linux-gnu --features defmt`; the RISC-V check uses the project's
 pinned nightly and `-Zbuild-std=core,alloc`.
