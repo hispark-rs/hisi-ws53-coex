@@ -13,6 +13,7 @@ use crate::{
     endpoint::{Endpoint, ReceiveError, SendError},
     mailbox::MailboxError,
     protocol::FirmwareProtocol,
+    session::Session,
     spsc::{Error, Receive, SharedMailbox, Transmit},
 };
 
@@ -63,6 +64,40 @@ impl<T: SharedMailbox, R: SharedMailbox, A: FrameAuthority> PollingEndpoint<T, R
             pending: [0; MAX_MESSAGE],
             pending_len: None,
         }
+    }
+
+    /// Recover both retained mailbox backends and the authority policy.
+    /// Any staged received message is discarded; this does not acknowledge it
+    /// to the peer or restore queue metadata.
+    ///
+    /// # Safety
+    /// Both peers and all other users must be quiescent; no notification,
+    /// outstanding payload reference, cache operation or memory access may
+    /// remain. Reconcile ownership and cache state before reusing either
+    /// mapping. The caller must explicitly accept loss of any staged message.
+    /// This does not make stale queues safe to attach again.
+    pub unsafe fn reclaim_after_peer_quiescent(self) -> (T, R, A) {
+        // SAFETY: the caller supplies the quiescence and ownership proof for
+        // both queues, including any references retained by the peer.
+        let tx = unsafe { self.tx.reclaim_after_peer_quiescent() };
+        // SAFETY: same proof applies independently to the receive queue.
+        let rx = unsafe { self.rx.reclaim_after_peer_quiescent() };
+        (tx, rx, self.authority)
+    }
+}
+
+impl<T: SharedMailbox, R: SharedMailbox, A: FrameAuthority> Session<PollingEndpoint<T, R, A>> {
+    /// Consume this session and reclaim both queues without reopening it.
+    /// This is also available after explicit or corruption-driven invalidation.
+    ///
+    /// # Safety
+    /// The full quiescence, cache, reference and staged-message conditions of
+    /// [`PollingEndpoint::reclaim_after_peer_quiescent`] must hold. Invalidating
+    /// a session does not itself stop the peer or establish these conditions.
+    pub unsafe fn reclaim_after_peer_quiescent(self) -> (T, R, A) {
+        let endpoint = self.into_reclaim_endpoint();
+        // SAFETY: caller supplies the endpoint's complete reclaim contract.
+        unsafe { endpoint.reclaim_after_peer_quiescent() }
     }
 }
 impl<T: SharedMailbox, R: SharedMailbox, A: FrameAuthority> Endpoint for PollingEndpoint<T, R, A> {
