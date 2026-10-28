@@ -91,7 +91,10 @@ impl<T: SharedMailbox, R: SharedMailbox, A: FrameAuthority> Endpoint for Polling
             let Some(message) = self
                 .rx
                 .try_pop_into(&mut frame)
-                .map_err(|_| ReceiveError::Corrupt)?
+                .map_err(|error| match error {
+                    Error::Mailbox(MailboxError::Message(_)) => ReceiveError::InvalidMessage,
+                    _ => ReceiveError::Corrupt,
+                })?
             else {
                 return Ok(None);
             };

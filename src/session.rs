@@ -3,6 +3,8 @@ use crate::endpoint::{Endpoint, ReceiveError, SendError};
 
 /// Owns one endpoint and stops all use after explicit invalidation.
 ///
+/// Detected transport corruption and an endpoint's own invalidation latch this
+/// wrapper invalid. A rejected message alone does not invalidate the transport.
 /// A platform must invalidate this value when it observes or otherwise knows
 /// that the peer or shared memory was reset/rebuilt. This wrapper does not
 /// detect an unobservable reset, quiesce hardware, or reclaim shared memory.
@@ -29,13 +31,24 @@ impl<E: Endpoint> Endpoint for Session<E> {
         if !self.valid {
             return Err(SendError::Invalidated);
         }
-        self.endpoint.try_send(message)
+        let result = self.endpoint.try_send(message);
+        if matches!(result, Err(SendError::Corrupt | SendError::Invalidated)) {
+            self.valid = false;
+        }
+        result
     }
     fn try_receive(&mut self, output: &mut [u8]) -> Result<Option<usize>, ReceiveError> {
         if !self.valid {
             return Err(ReceiveError::Invalidated);
         }
-        self.endpoint.try_receive(output)
+        let result = self.endpoint.try_receive(output);
+        if matches!(
+            result,
+            Err(ReceiveError::Corrupt | ReceiveError::Invalidated)
+        ) {
+            self.valid = false;
+        }
+        result
     }
 }
 
@@ -99,5 +112,51 @@ mod tests {
         assert_eq!(s.try_send(&[]), Err(SendError::Invalidated));
         assert_eq!(s.try_receive(&mut out), Err(ReceiveError::Invalidated));
         assert!(!s.is_valid());
+    }
+
+    struct Failing {
+        receive: ReceiveError,
+    }
+    impl Endpoint for Failing {
+        fn try_send(&mut self, _: &[u8]) -> Result<(), SendError> {
+            Err(SendError::Corrupt)
+        }
+        fn try_receive(&mut self, _: &mut [u8]) -> Result<Option<usize>, ReceiveError> {
+            Err(self.receive)
+        }
+    }
+
+    #[test]
+    fn corruption_latches_invalidation_but_bad_message_does_not() {
+        let mut bad_frame = Session::new(Failing {
+            receive: ReceiveError::InvalidMessage,
+        });
+        assert_eq!(
+            bad_frame.try_receive(&mut []),
+            Err(ReceiveError::InvalidMessage)
+        );
+        assert!(bad_frame.is_valid());
+        let mut corrupt_receive = Session::new(Failing {
+            receive: ReceiveError::Corrupt,
+        });
+        assert_eq!(
+            corrupt_receive.try_receive(&mut []),
+            Err(ReceiveError::Corrupt)
+        );
+        assert!(!corrupt_receive.is_valid());
+        assert_eq!(
+            corrupt_receive.try_receive(&mut []),
+            Err(ReceiveError::Invalidated)
+        );
+        assert_eq!(corrupt_receive.try_send(&[]), Err(SendError::Invalidated));
+        let mut corrupt_send = Session::new(Failing {
+            receive: ReceiveError::InvalidMessage,
+        });
+        assert_eq!(corrupt_send.try_send(&[]), Err(SendError::Corrupt));
+        assert!(!corrupt_send.is_valid());
+        assert_eq!(
+            corrupt_send.try_receive(&mut []),
+            Err(ReceiveError::Invalidated)
+        );
     }
 }

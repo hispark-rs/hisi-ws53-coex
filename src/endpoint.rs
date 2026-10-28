@@ -30,6 +30,8 @@ pub enum SendError {
 pub enum ReceiveError {
     /// A message is pending but does not fit; retry with at least this capacity.
     BufferTooSmall { required: usize },
+    /// A complete message has an invalid encoding. It is retained, not skipped.
+    InvalidMessage,
     /// The message or transport state is corrupt. No implicit queue reset occurs.
     Corrupt,
     /// The session is no longer usable.

@@ -18,7 +18,9 @@ authorization policy. It does not send notifications or wait asynchronously;
 the peer must poll or the platform must separately issue qualified notifications.
 After a short receive buffer the frame is retained locally even though the queue
 slot has been released. Explicit session invalidation prevents later endpoint
-operations but cannot detect an unobservable peer reset or reclaim peer memory.
+operations; detected queue corruption also latches invalidation. A malformed
+complete message is retained and reported separately. Neither path resets a
+queue, detects an unobservable peer reset or reclaims peer memory.
 
 Run independent host tests with `cargo test --locked --target
 x86_64-unknown-linux-gnu --features defmt`; the RISC-V check uses the project's

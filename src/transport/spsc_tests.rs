@@ -410,6 +410,19 @@ fn polling_endpoint_checks_authority_backpressure_and_preserves_short_receive() 
     assert_eq!(endpoint.try_receive(&mut output), Ok(Some(6)));
     assert_eq!(&output[..6], &frame);
     assert_eq!(endpoint.try_receive(&mut output), Ok(None));
+    // A complete but unsupported frame remains queued and is distinguishable
+    // from broken ring metadata. The peer publishes it at the wrapped head.
+    for (i, value) in [255, 0, 0, 0].into_iter().enumerate() {
+        write8(&peer_rx, 12 + (6 + i) % 8, value);
+    }
+    write16(&peer_rx, 6, 2);
+    let read_before = read16(&peer_rx, 4);
+    assert_eq!(
+        endpoint.try_receive(&mut output),
+        Err(ReceiveError::InvalidMessage)
+    );
+    assert_eq!(read16(&peer_rx, 4), read_before);
+    assert!(endpoint.is_valid());
     write8(&peer_rx, 3, 9); // Corrupt metadata is not an empty queue or reset.
     let before = output;
     assert_eq!(
@@ -417,7 +430,8 @@ fn polling_endpoint_checks_authority_backpressure_and_preserves_short_receive() 
         Err(ReceiveError::Corrupt)
     );
     assert_eq!(output, before);
-    endpoint.invalidate();
+    assert!(!endpoint.is_valid());
+    write8(&peer_rx, 3, 0); // Restoring bytes cannot make the old session valid.
     assert_eq!(endpoint.try_send(&frame), Err(SendError::Invalidated));
     assert_eq!(
         endpoint.try_receive(&mut output),
