@@ -5,6 +5,9 @@
 //! A short output buffer leaves the complete message in endpoint-owned staging;
 //! the shared queue slot has already been released. Do not discard an endpoint
 //! with a staged message unless the platform explicitly accepts that loss.
+//! The send bound is the smaller of the protocol frame limit and the queue
+//! capacity minus its reserved byte. An oversized frame is rejected even when
+//! the queue is empty; `Full` instead denotes temporary backpressure.
 use crate::{
     MAX_MESSAGE, Message, MessageError,
     endpoint::{Endpoint, ReceiveError, SendError},
@@ -64,15 +67,12 @@ impl<T: SharedMailbox, R: SharedMailbox, A: FrameAuthority> PollingEndpoint<T, R
 }
 impl<T: SharedMailbox, R: SharedMailbox, A: FrameAuthority> Endpoint for PollingEndpoint<T, R, A> {
     fn try_send(&mut self, bytes: &[u8]) -> Result<(), SendError> {
-        if bytes.len() > MAX_MESSAGE {
-            return Err(SendError::TooLong {
-                maximum: MAX_MESSAGE,
-            });
+        let maximum = self.tx.maximum_frame_len();
+        if bytes.len() > maximum {
+            return Err(SendError::TooLong { maximum });
         }
         let message = Message::decode(bytes).map_err(|error| match error {
-            MessageError::PayloadTooLong => SendError::TooLong {
-                maximum: MAX_MESSAGE,
-            },
+            MessageError::PayloadTooLong => SendError::TooLong { maximum },
             _ => SendError::InvalidMessage,
         })?;
         if !self.authority.permits(message) {

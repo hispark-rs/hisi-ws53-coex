@@ -217,6 +217,11 @@ pub struct Transmit<M: SharedMailbox> {
     _local: PhantomData<*mut ()>,
 }
 impl<M: SharedMailbox> Transmit<M> {
+    /// Maximum complete encoded frame that fits even in an empty queue.
+    pub(crate) fn maximum_frame_len(&self) -> usize {
+        (self.size.capacity() - 1).min(MAX_MESSAGE)
+    }
+
     /// Attach to a prepared empty TX mailbox without writing metadata.
     ///
     /// # Safety

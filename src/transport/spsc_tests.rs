@@ -374,6 +374,7 @@ fn polling_endpoint_checks_authority_backpressure_and_preserves_short_receive() 
     }
     let tx_memory = prepared(8, true);
     let rx_memory = prepared(8, false);
+    let peer_tx = tx_memory.bytes.clone();
     let peer_rx = rx_memory.bytes.clone();
     // SAFETY: exclusively owned in-memory test queues have no active peer at
     // construction; the host peer below only writes its complementary fields.
@@ -385,6 +386,12 @@ fn polling_endpoint_checks_authority_backpressure_and_preserves_short_receive() 
         PollingEndpoint::from_prepared(tx, rx, TestPolicy, FirmwareProtocol::Sdk163d9150)
     };
     let mut endpoint = Session::new(endpoint);
+    let before = peer_tx.lock().unwrap().clone();
+    assert_eq!(
+        endpoint.try_send(&[1, 0, 4, 0, 1, 2, 3, 4]),
+        Err(SendError::TooLong { maximum: 7 })
+    );
+    assert_eq!(*peer_tx.lock().unwrap(), before);
     assert_eq!(
         endpoint.try_send(&[20, 0, 0, 0]),
         Err(SendError::InvalidMessage)
@@ -395,6 +402,16 @@ fn polling_endpoint_checks_authority_backpressure_and_preserves_short_receive() 
     );
     assert_eq!(endpoint.try_send(&[1, 0, 2, 0, 0xaa, 0xbb]), Ok(()));
     assert_eq!(endpoint.try_send(&[1, 0, 0, 0]), Err(SendError::Full));
+    let queued = peer_tx.lock().unwrap().clone();
+    assert_eq!(
+        endpoint.try_send(&[1, 0, 4, 0, 1, 2, 3, 4]),
+        Err(SendError::TooLong { maximum: 7 })
+    );
+    assert_eq!(*peer_tx.lock().unwrap(), queued);
+    assert_eq!(sdk_pop(&peer_tx, 8).unwrap(), [1, 0, 2, 0, 0xaa, 0xbb]);
+    let maximum_frame = [1, 0, 3, 0, 1, 2, 3];
+    assert_eq!(endpoint.try_send(&maximum_frame), Ok(()));
+    assert_eq!(sdk_pop(&peer_tx, 8).unwrap(), maximum_frame);
     let frame = [1, 0, 2, 0, 0xcc, 0xdd];
     for (i, value) in frame.into_iter().enumerate() {
         write8(&peer_rx, 12 + i, value);
