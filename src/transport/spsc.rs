@@ -12,8 +12,8 @@
 //! local cursor. Both mappings must be coherent/uncached, with no cached alias.
 //! There is no clock/reset, service negotiation or notification/rearm here.
 
-use super::mailbox::{MailboxError, MailboxSize};
-use super::{Channel, MAX_MESSAGE, MAX_PAYLOAD, Message, MessageError};
+use crate::mailbox::{MailboxError, MailboxSize};
+use crate::{Channel, MAX_MESSAGE, MAX_PAYLOAD, Message, MessageError};
 use core::sync::atomic::{Ordering, compiler_fence};
 use core::{marker::PhantomData, mem::ManuallyDrop, ptr::NonNull};
 use vcell::VolatileCell;

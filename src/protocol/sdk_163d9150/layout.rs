@@ -8,8 +8,8 @@
 //! peer lease. A successful descriptor never grants a live shared-memory token.
 //! No memory is accessed, initialized or modified by this module.
 
-use super::Channel;
-use super::mailbox::{MailboxSize, Route};
+use crate::Channel;
+use crate::mailbox::{MailboxSize, Route};
 
 const ALIAS_OFFSET: u32 = 0x1000_0000;
 const CONTROL_START: u32 = 0x10000;

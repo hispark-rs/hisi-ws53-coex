@@ -60,7 +60,7 @@ fn every_u16_oversized_length_is_rejected_before_accessing_the_payload() {
     for length in [61, 64, 255, 256, 65535, 65536, 65540] {
         let bytes = std::vec![0; length];
         assert_eq!(
-            Message::new(MessageId(0), Priority::Low, &bytes),
+            Message::new(MessageId::try_from_raw(0).unwrap(), Priority::Low, &bytes),
             Err(MessageError::PayloadTooLong)
         );
     }

@@ -11,7 +11,7 @@
 //! by a qualified transport before these serialized operations can run against
 //! a live peer. No lock-free/shared-memory claim is made by this safe image API.
 
-use super::{Channel, MAX_MESSAGE, Message, MessageError};
+use crate::{Channel, MAX_MESSAGE, Message, MessageError};
 
 const METADATA: usize = 12;
 
@@ -212,7 +212,7 @@ impl<'a> MailboxImage<'a> {
             *byte = self.bytes[METADATA + (state.read + i) % capacity];
         }
         let payload_length = usize::from(u16::from_le_bytes([frame[2], frame[3]]));
-        if payload_length > super::MAX_PAYLOAD {
+        if payload_length > crate::MAX_PAYLOAD {
             return Err(MailboxError::Message(MessageError::PayloadTooLong));
         }
         let length = 4 + payload_length;

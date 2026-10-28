@@ -13,7 +13,7 @@
 //! staging avoids allocation and partial publication; it can contain random
 //! bytes after success/failure and must not be shared with an active reader.
 
-use super::{Message, MessageId};
+use crate::{Message, MessageId};
 
 const ALIAS_OFFSET: u32 = 0x1000_0000;
 

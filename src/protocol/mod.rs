@@ -11,7 +11,4 @@ pub enum FirmwareProtocol {
 }
 
 /// Codecs and mailbox layout for the explicitly selected SDK profile.
-pub mod sdk_163d9150 {
-    pub use crate::{MAX_MESSAGE, MAX_PAYLOAD, Message, MessageError, MessageId, Priority};
-    pub use crate::{layout, mailbox};
-}
+pub mod sdk_163d9150;
