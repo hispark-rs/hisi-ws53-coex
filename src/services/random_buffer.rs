@@ -175,6 +175,23 @@ impl<'a> RandomBufferImage<'a> {
     pub fn bytes(&self) -> &[u8] {
         self.bytes
     }
+    /// Process a locally copied IPC18 message against this image's registration.
+    ///
+    /// The caller must route only messages from the authorized firmware peer;
+    /// a message ID or matching numeric address does not authenticate it. This
+    /// function neither receives from a queue nor acknowledges a notification.
+    /// Decode and bounds failures do not call `fill` or change the destination.
+    /// On a source failure the message may already have been consumed by the
+    /// caller's endpoint; retry and notification policy belong to the platform.
+    pub fn handle_message<E>(
+        &mut self,
+        message: Message<'_>,
+        scratch: &mut [u8],
+        fill: impl FnOnce(&mut [u8]) -> Result<(), E>,
+    ) -> Result<(), ServiceError<E>> {
+        let request = UpdateRequest::decode(message, self.region).map_err(ServiceError::Request)?;
+        self.update(request, scratch, fill)
+    }
     /// Fill the selected range transactionally using a caller-provided entropy
     /// operation. The platform supplies its own attempt budget and delay policy.
     /// No allocation, global interrupt masking, IPC ACK or notification occurs.

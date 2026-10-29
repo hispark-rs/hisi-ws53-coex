@@ -18,6 +18,63 @@ fn message(bytes: &[u8]) -> Message<'_> {
 }
 
 #[test]
+fn service_handles_only_registered_requests_and_preserves_image_on_failure() {
+    use core::cell::Cell;
+
+    let region = BufferRegion::try_from_control_bounds(0xc1000, 0xc1008).unwrap();
+    let mut bytes = [0xa5; 8];
+    let mut image = RandomBufferImage::attach(region, &mut bytes).unwrap();
+    let mut scratch = [0; 8];
+    let calls = Cell::new(0);
+    let valid = payload(0, 0xc1000, 8);
+    let wrong_id =
+        Message::new(MessageId::try_from_raw(0).unwrap(), Priority::Low, &valid).unwrap();
+    assert_eq!(
+        image.handle_message(wrong_id, &mut scratch, |_| {
+            calls.set(calls.get() + 1);
+            Ok::<_, ()>(())
+        }),
+        Err(ServiceError::Request(RequestError::WrongMessage))
+    );
+    assert_eq!(
+        image.handle_message(message(&valid), &mut scratch[..7], |_| {
+            calls.set(calls.get() + 1);
+            Ok::<_, ()>(())
+        }),
+        Err(ServiceError::ScratchTooSmall)
+    );
+    let wrong = payload(0, 0xc1001, 8);
+    assert_eq!(
+        image.handle_message(message(&wrong), &mut scratch, |_| {
+            calls.set(calls.get() + 1);
+            Ok::<_, ()>(())
+        }),
+        Err(ServiceError::Request(RequestError::UnregisteredRegion))
+    );
+    let second_half = payload(2, 0xc1000, 8);
+    assert_eq!(
+        image.handle_message(message(&second_half), &mut scratch, |out| {
+            calls.set(calls.get() + 1);
+            out.fill(0x55);
+            Err("source failed")
+        }),
+        Err(ServiceError::Random("source failed"))
+    );
+    assert_eq!(image.bytes(), &[0xa5; 8]);
+    assert_eq!(calls.get(), 1);
+    image
+        .handle_message(message(&second_half), &mut scratch, |out| {
+            out.fill(0x5a);
+            Ok::<_, ()>(())
+        })
+        .unwrap();
+    assert_eq!(
+        image.bytes(),
+        &[0xa5, 0xa5, 0xa5, 0xa5, 0x5a, 0x5a, 0x5a, 0x5a]
+    );
+}
+
+#[test]
 fn explicit_bounds_reject_wrap_and_do_not_assume_ct_sram() {
     for (start, end) in [(0, 0), (4, 3), (0, u32::MAX), (0xefffffff, 0xf0000000)] {
         assert!(BufferRegion::try_from_control_bounds(start, end).is_none());
